@@ -369,7 +369,7 @@
     </div>
 
     <div class="success-box" id="success-box">
-      <p>&#10003;&nbsp;<strong>Brief submitted!</strong> Data saved to Google Sheets and Notion task created.</p>
+      <p>&#10003;&nbsp;<strong>Brief submitted!</strong> Notion task created and data logged to Google Sheets.</p>
     </div>
 
   </div>
@@ -377,9 +377,12 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-// ── CONFIG — no secrets here, Apps Script handles Notion ────
+// ── CONFIG — zero secrets here ───────────────────────────────
+// Replace WORKER_URL with your deployed Cloudflare Worker URL
+// e.g. "https://leoron-brief.yourname.workers.dev"
+const WORKER_URL      = "https://leoron-marketing-brief.anaselshershaby.workers.dev";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHTnJCaRcUjg031D5vZZg-96s9KWemYW7lIM3jzfiR9Qrl4YvulkvZOiIe4ajl6qw3/exec";
-// ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
 let selectedPriority = null;
 document.getElementById('f-date').valueAsDate = new Date();
@@ -387,40 +390,55 @@ document.getElementById('f-date').valueAsDate = new Date();
 function toggleTag(el) { el.classList.toggle('selected'); }
 
 function setPriority(level) {
-  ['low','medium','high'].forEach(l => document.getElementById('p-' + l).classList.remove('selected'));
+  ['low','medium','high'].forEach(l => document.getElementById('p-'+l).classList.remove('selected'));
   selectedPriority = level;
-  document.getElementById('p-' + level).classList.add('selected');
+  document.getElementById('p-'+level).classList.add('selected');
 }
 
-function charCounter(id, counterId, max) {
-  const el = document.getElementById(id);
-  const cc = document.getElementById(counterId);
+function charCounter(id, cid, max) {
+  const el = document.getElementById(id), cc = document.getElementById(cid);
   el.addEventListener('input', () => {
-    const len = el.value.length;
-    cc.textContent = len + ' / ' + max;
-    cc.style.color = len > max * 0.9 ? '#CE2C30' : '#bbb';
+    const n = el.value.length;
+    cc.textContent = n + ' / ' + max;
+    cc.style.color = n > max * 0.9 ? '#CE2C30' : '#bbb';
   });
 }
-charCounter('f-desc',    'cc-desc',    500);
-charCounter('f-why',     'cc-why',     500);
-charCounter('f-problem', 'cc-problem', 500);
+charCounter('f-desc','cc-desc',500);
+charCounter('f-why','cc-why',500);
+charCounter('f-problem','cc-problem',500);
 
-// ── SUBMIT ───────────────────────────────────────────────────
+async function sendToNotion(p) {
+  const res = await fetch(WORKER_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(p)
+  });
+  const j = await res.json();
+  if (j.error) throw new Error('Notion error: ' + j.error);
+  return j;
+}
+
+function sendToSheets(p) {
+  fetch(APPS_SCRIPT_URL, {
+    method:  'POST',
+    mode:    'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body:    JSON.stringify(p)
+  }).catch(()=>{});
+}
+
 async function submitBrief() {
   const name    = document.getElementById('f-name').value.trim();
   const project = document.getElementById('f-project').value.trim();
   const desc    = document.getElementById('f-desc').value.trim();
-
   if (!name || !project || !desc) {
-    alert('Please fill in at minimum: Full name, Project name, and Description.');
+    alert('Please fill in: Full name, Project name, and Description.');
     return;
   }
-
   const btn = document.querySelector('.btn-submit');
-  btn.disabled    = true;
-  btn.textContent = 'Submitting…';
+  btn.disabled = true; btn.textContent = 'Submitting\u2026';
 
-  const tags   = [...document.querySelectorAll('#audience-tags .tag.selected')].map(t => t.textContent.trim()).join(', ');
+  const tags   = [...document.querySelectorAll('#audience-tags .tag.selected')].map(t=>t.textContent.trim()).join(', ');
   const custom = document.getElementById('f-audience-custom').value.trim();
 
   const payload = {
@@ -433,7 +451,7 @@ async function submitBrief() {
     strategicFit:     document.getElementById('f-why').value.trim(),
     problemStatement: document.getElementById('f-problem').value.trim(),
     desiredOutcome:   document.getElementById('f-outcome').value.trim(),
-    targetAudience:   [tags, custom].filter(Boolean).join(' | '),
+    targetAudience:   [tags,custom].filter(Boolean).join(' | '),
     industry:         document.getElementById('f-industry').value.trim(),
     startDate:        document.getElementById('f-start').value || '',
     endDate:          document.getElementById('f-end').value   || '',
@@ -444,109 +462,91 @@ async function submitBrief() {
   };
 
   try {
-    // Send to Apps Script — it handles BOTH Sheet + Notion server-side
-    // Using no-cors here is fine for triggering execution; Apps Script
-    // always redirects so we cannot read the response anyway.
-    await fetch(APPS_SCRIPT_URL, {
-      method:  'POST',
-      mode:    'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body:    JSON.stringify(payload)
-    });
-
+    await sendToNotion(payload);
+    sendToSheets(payload);
     const box = document.getElementById('success-box');
-    box.innerHTML = '<p>✓&nbsp;<strong>Brief submitted!</strong> Logged in Google Sheets and Notion task created.</p>';
+    box.innerHTML = '<p>\u2713\u00a0<strong>Brief submitted!</strong> Notion task created and data logged to Google Sheets.</p>';
     box.style.display = 'block';
-    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    btn.textContent = '✓ Submitted';
-
-  } catch (err) {
-    alert('Network error \u2014 please try again.\n\n' + (err.message || err));
-    btn.disabled    = false;
-    btn.textContent = 'Submit Brief \u2713';
+    box.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    btn.textContent = '\u2713 Submitted';
+  } catch(err) {
+    console.error(err);
+    alert('Submission failed: ' + (err.message || String(err)));
+    btn.disabled = false; btn.textContent = 'Submit Brief \u2713';
   }
 }
 
-// ── RESET ────────────────────────────────────────────────────
 function resetForm() {
-  document.querySelectorAll('input[type="text"],input[type="email"],textarea').forEach(el => el.value = '');
-  document.querySelectorAll('input[type="date"]').forEach(el => el.value = '');
+  document.querySelectorAll('input[type="text"],input[type="email"],textarea').forEach(el=>el.value='');
+  document.querySelectorAll('input[type="date"]').forEach(el=>el.value='');
   document.getElementById('f-date').valueAsDate = new Date();
-  document.querySelectorAll('.tag.selected').forEach(t => t.classList.remove('selected'));
-  ['low','medium','high'].forEach(l => document.getElementById('p-' + l).classList.remove('selected'));
+  document.querySelectorAll('.tag.selected').forEach(t=>t.classList.remove('selected'));
+  ['low','medium','high'].forEach(l=>document.getElementById('p-'+l).classList.remove('selected'));
   selectedPriority = null;
   document.getElementById('success-box').style.display = 'none';
-  ['cc-desc','cc-why','cc-problem'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.textContent = '0 / 500'; el.style.color = '#bbb'; }
+  ['cc-desc','cc-why','cc-problem'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.textContent='0 / 500';el.style.color='#bbb';}
   });
-  const btn = document.querySelector('.btn-submit');
-  btn.disabled = false;
-  btn.textContent = 'Submit Brief \u2713';
+  const btn=document.querySelector('.btn-submit');
+  btn.disabled=false; btn.textContent='Submit Brief \u2713';
 }
 
-// ── PDF DOWNLOAD ─────────────────────────────────────────────
 async function downloadPDF() {
-  const { jsPDF } = window.jspdf;
-  const btn = document.getElementById('pdfBtn');
-  btn.disabled = true; btn.textContent = 'Generating…';
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageW = 210, pageH = 297, margin = 14, contentW = pageW - margin * 2;
-  let y = 0;
-
-  doc.setFillColor(35,31,32); doc.rect(0,0,pageW,22,'F');
+  const {jsPDF}=window.jspdf;
+  const btn=document.getElementById('pdfBtn');
+  btn.disabled=true; btn.textContent='Generating\u2026';
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const pW=210,pH=297,mg=14,cW=pW-mg*2; let y=0;
+  doc.setFillColor(35,31,32); doc.rect(0,0,pW,22,'F');
   doc.setFontSize(9); doc.setTextColor(180,180,180);
-  doc.text('L3RN Institute  |  Marketing Brief', margin, 14);
+  doc.text('L3RN Institute  |  Marketing Brief',mg,14);
   doc.setTextColor(120,120,120);
-  doc.text(new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}), pageW-margin, 14, {align:'right'});
-  y = 32;
-
-  function sec(title, fields) {
-    if (y + 10 + fields.length * 14 > pageH - 20) { doc.addPage(); y = 20; }
-    doc.setFontSize(7.5); doc.setTextColor(92,107,119); doc.setFont(undefined,'bold');
-    doc.text(title.toUpperCase(), margin, y);
-    doc.setDrawColor(228,226,222); doc.setLineWidth(0.3);
-    doc.line(margin + doc.getTextWidth(title.toUpperCase()) + 3, y - 0.5, pageW - margin, y - 0.5);
-    y += 5;
-    fields.forEach(([lbl, val]) => {
-      if (!val) return;
-      if (y + 14 > pageH - 20) { doc.addPage(); y = 20; }
-      doc.setFontSize(8); doc.setTextColor(35,31,32); doc.setFont(undefined,'bold');
-      doc.text(lbl, margin, y); y += 4.5;
-      doc.setFont(undefined,'normal'); doc.setFontSize(9); doc.setTextColor(60,60,60);
-      doc.splitTextToSize(val || '—', contentW).forEach(line => {
-        if (y + 5 > pageH - 20) { doc.addPage(); y = 20; }
-        doc.text(line, margin, y); y += 5;
+  doc.text(new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),pW-mg,14,{align:'right'});
+  y=32;
+  function sec(ttl,flds){
+    if(y+10+flds.length*14>pH-20){doc.addPage();y=20;}
+    doc.setFontSize(7.5);doc.setTextColor(92,107,119);doc.setFont(undefined,'bold');
+    doc.text(ttl.toUpperCase(),mg,y);
+    doc.setDrawColor(228,226,222);doc.setLineWidth(0.3);
+    doc.line(mg+doc.getTextWidth(ttl.toUpperCase())+3,y-0.5,pW-mg,y-0.5);
+    y+=5;
+    flds.forEach(([l,v])=>{
+      if(!v)return;
+      if(y+14>pH-20){doc.addPage();y=20;}
+      doc.setFontSize(8);doc.setTextColor(35,31,32);doc.setFont(undefined,'bold');
+      doc.text(l,mg,y);y+=4.5;
+      doc.setFont(undefined,'normal');doc.setFontSize(9);doc.setTextColor(60,60,60);
+      doc.splitTextToSize(v||'\u2014',cW).forEach(ln=>{
+        if(y+5>pH-20){doc.addPage();y=20;}
+        doc.text(ln,mg,y);y+=5;
       });
-      y += 3;
+      y+=3;
     });
-    y += 4;
+    y+=4;
   }
-
-  const g  = id => (document.getElementById(id)?.value || '').trim();
-  const st = [...document.querySelectorAll('#audience-tags .tag.selected')].map(t => t.textContent).join(', ');
-  const fa = [st, g('f-audience-custom')].filter(Boolean).join(' | ');
-  const pm = { low:'Standard — no deadline', medium:'Time-sensitive — within weeks', high:'Urgent — within days' };
-
-  sec('Submitted by',[['Full name',g('f-name')],['Email',g('f-email')],['Sales region/team',g('f-region')],['Date submitted',g('f-date')]]);
-  sec('1 — What is the project about?',[['Project name',g('f-project')],['Project description',g('f-desc')]]);
-  sec('2 — Why do we need to communicate it?',[['Business reason',g('f-why')]]);
-  sec('3 — What problem is this solving?',[['Problem statement',g('f-problem')],['Desired outcome',g('f-outcome')]]);
-  sec('4 — Who are we talking to?',[['Target audience',fa],['Industry/sector focus',g('f-industry')]]);
-  sec('5 — Duration & timeline',[['Start date',g('f-start')],['End date',g('f-end')],['Milestones',g('f-milestones')]]);
-  sec('6 — Urgency',[['Urgency level',selectedPriority?pm[selectedPriority]:''],['Reason',g('f-urgency-reason')]]);
-  sec('7 — Anything else?',[['Additional notes',g('f-notes')]]);
-
-  const tp = doc.getNumberOfPages();
-  for (let i = 1; i <= tp; i++) {
+  const g=id=>(document.getElementById(id)?.value||'').trim();
+  const st=[...document.querySelectorAll('#audience-tags .tag.selected')].map(t=>t.textContent).join(', ');
+  const fa=[st,g('f-audience-custom')].filter(Boolean).join(' | ');
+  const pm={low:'Standard \u2014 no deadline',medium:'Time-sensitive \u2014 within weeks',high:'Urgent \u2014 within days'};
+  sec('Submitted by',[['Full name',g('f-name')],['Email',g('f-email')],['Region',g('f-region')],['Date',g('f-date')]]);
+  sec('1 \u2014 Project',[['Name',g('f-project')],['Description',g('f-desc')]]);
+  sec('2 \u2014 Why communicate it?',[['Business reason',g('f-why')]]);
+  sec('3 \u2014 Problem',[['Problem statement',g('f-problem')],['Desired outcome',g('f-outcome')]]);
+  sec('4 \u2014 Audience',[['Target audience',fa],['Industry',g('f-industry')]]);
+  sec('5 \u2014 Timeline',[['Start',g('f-start')],['End',g('f-end')],['Milestones',g('f-milestones')]]);
+  sec('6 \u2014 Urgency',[['Level',selectedPriority?pm[selectedPriority]:''],['Reason',g('f-urgency-reason')]]);
+  sec('7 \u2014 Notes',[['Additional notes',g('f-notes')]]);
+  const tp=doc.getNumberOfPages();
+  for(let i=1;i<=tp;i++){
     doc.setPage(i);
-    doc.setFillColor(35,31,32); doc.rect(0,pageH-10,pageW,10,'F');
-    doc.setFontSize(7); doc.setTextColor(120,120,120);
-    doc.text('Radiating Knowledge — leoron.com', margin, pageH-4);
-    doc.text('Page '+i+' of '+tp, pageW-margin, pageH-4, {align:'right'});
+    doc.setFillColor(35,31,32);doc.rect(0,pH-10,pW,10,'F');
+    doc.setFontSize(7);doc.setTextColor(120,120,120);
+    doc.text('Radiating Knowledge \u2014 leoron.com',mg,pH-4);
+    doc.text('Page '+i+' of '+tp,pW-mg,pH-4,{align:'right'});
   }
-  doc.save('LEORON_Brief_' + (g('f-project')||'brief').replace(/\s+/g,'_') + '.pdf');
-  btn.disabled = false; btn.textContent = '↓ Save as PDF';
+  doc.save('LEORON_Brief_'+(g('f-project')||'brief').replace(/\s+/g,'_')+'.pdf');
+  btn.disabled=false; btn.textContent='\u2193 Save as PDF';
 }
 </script>
 </body>
