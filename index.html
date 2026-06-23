@@ -461,11 +461,9 @@ async function submitBrief() {
     btn.textContent = '✓ Submitted';
 
   } catch (err) {
-    alert('Network error — please try again.
-
-' + (err.message || err));
+    alert('Network error \u2014 please try again.\n\n' + (err.message || err));
     btn.disabled    = false;
-    btn.textContent = 'Submit Brief ✓';
+    btn.textContent = 'Submit Brief \u2713';
   }
 }
 
@@ -484,7 +482,7 @@ function resetForm() {
   });
   const btn = document.querySelector('.btn-submit');
   btn.disabled = false;
-  btn.textContent = 'Submit Brief ✓';
+  btn.textContent = 'Submit Brief \u2713';
 }
 
 // ── PDF DOWNLOAD ─────────────────────────────────────────────
