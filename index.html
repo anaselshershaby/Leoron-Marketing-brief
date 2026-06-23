@@ -364,12 +364,12 @@
       <span class="footer-left">Radiating Knowledge &mdash; leoron.com</span>
       <div class="footer-right">
         <button class="btn-reset" onclick="resetForm()">Clear</button>
-        <button class="btn-submit" onclick="submitBrief()">Mark complete &#10003;</button>
+        <button class="btn-submit" onclick="submitBrief()">Submit Brief &#10003;</button>
       </div>
     </div>
 
     <div class="success-box" id="success-box">
-      <p><strong>Brief ready.</strong> Click <strong>Save as PDF</strong> at the top right, then email the PDF to your marketing team.</p>
+      <p>&#10003; <strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a Notion task has been created.</p>
     </div>
 
   </div>
@@ -439,23 +439,43 @@
     };
 
     try {
-      await fetch(APPS_SCRIPT_URL, {
+      // Send as URL-encoded form — avoids CORS preflight, Apps Script receives full data
+      const formBody = "data=" + encodeURIComponent(JSON.stringify(payload));
+
+      const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formBody
       });
 
+      // Apps Script returns JSON; read it to catch any server-side error
+      let result = {};
+      try {
+        result = await response.json();
+      } catch (_) {
+        // If Apps Script returns non-JSON (e.g. redirect), treat as success
+        // because the submission was still received
+      }
+
+      if (result.status === 'error') {
+        throw new Error(result.message || 'Apps Script reported an error.');
+      }
+
       const box = document.getElementById('success-box');
-      box.innerHTML = '<p><strong>Brief submitted!</strong> Your request has been sent to the marketing team and logged in Notion.</p>';
+      box.innerHTML = '<p>&#10003; <strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a task has been created in Notion.</p>';
       box.style.display = 'block';
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      submitBtn.textContent = '\u2713 Submitted';
 
     } catch (err) {
-      alert('Something went wrong. Please try again or contact the marketing team.');
+      alert('Submission failed: ' + (err.message || err) + '\n\nPlease screenshot this message and contact the marketing team.');
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Mark complete ✓';
+      if (submitBtn.textContent !== '\u2713 Submitted') {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Brief \u2713';
+      } else {
+        submitBtn.disabled = false;
+      }
     }
   }
 
