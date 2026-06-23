@@ -369,7 +369,7 @@
     </div>
 
     <div class="success-box" id="success-box">
-      <p>&#10003; <strong>Brief submitted!</strong> Logged in Google Sheets and a Notion task created.</p>
+      <p>&#10003;&nbsp;<strong>Brief submitted!</strong> Logged in Google Sheets and a Notion task has been created.</p>
     </div>
 
   </div>
@@ -377,6 +377,10 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
+  // ── CONFIG ──────────────────────────────────────────────────
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHTnJCaRcUjg031D5vZZg-96s9KWemYW7lIM3jzfiR9Qrl4YvulkvZOiIe4ajl6qw3/exec";
+  // ────────────────────────────────────────────────────────────
+
   let selectedPriority = null;
   document.getElementById('f-date').valueAsDate = new Date();
 
@@ -397,78 +401,77 @@
       counter.style.color = len > max * 0.9 ? '#CE2C30' : '#bbb';
     });
   }
-  charCounter('f-desc', 'cc-desc', 500);
-  charCounter('f-why', 'cc-why', 500);
+  charCounter('f-desc',    'cc-desc',    500);
+  charCounter('f-why',     'cc-why',     500);
   charCounter('f-problem', 'cc-problem', 500);
 
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxHTnJCaRcUjg031D5vZZg-96s9KWemYW7lIM3jzfiR9Qrl4YvulkvZOiIe4ajl6qw3/exec";
-
+  // ── SUBMIT ───────────────────────────────────────────────────
   async function submitBrief() {
     const name    = document.getElementById('f-name').value.trim();
     const project = document.getElementById('f-project').value.trim();
     const desc    = document.getElementById('f-desc').value.trim();
+
     if (!name || !project || !desc) {
-      alert('Please fill in at minimum: your name, project name, and project description before saving.');
+      alert('Please fill in at minimum: your name, project name, and project description before submitting.');
       return;
     }
 
     const submitBtn = document.querySelector('.btn-submit');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Submitting…';
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Submitting\u2026';
 
-    const selectedTags = [...document.querySelectorAll('#audience-tags .tag.selected')].map(t => t.textContent).join(', ');
+    const selectedTags = [...document.querySelectorAll('#audience-tags .tag.selected')]
+      .map(t => t.textContent.trim()).join(', ');
+    const audienceCustom = document.getElementById('f-audience-custom').value.trim();
+    const fullAudience   = [selectedTags, audienceCustom].filter(Boolean).join(' | ');
 
+    // Build the payload object
     const payload = {
       submittedAt:      new Date().toISOString(),
       salesRep:         name,
       email:            document.getElementById('f-email').value.trim(),
       region:           document.getElementById('f-region').value.trim(),
       projectName:      project,
+      course:           project,
       description:      desc,
       strategicFit:     document.getElementById('f-why').value.trim(),
       problemStatement: document.getElementById('f-problem').value.trim(),
       desiredOutcome:   document.getElementById('f-outcome').value.trim(),
-      targetAudience:   selectedTags + (document.getElementById('f-audience-custom').value.trim() ? ' | ' + document.getElementById('f-audience-custom').value.trim() : ''),
+      targetAudience:   fullAudience,
       industry:         document.getElementById('f-industry').value.trim(),
-      startDate:        document.getElementById('f-start').value,
-      endDate:          document.getElementById('f-end').value,
+      startDate:        document.getElementById('f-start').value || '',
+      endDate:          document.getElementById('f-end').value   || '',
       milestones:       document.getElementById('f-milestones').value.trim(),
-      priority:         selectedPriority || 'standard',
+      priority:         selectedPriority || 'low',
       urgencyReason:    document.getElementById('f-urgency-reason').value.trim(),
-      notes:            document.getElementById('f-notes').value.trim(),
+      notes:            document.getElementById('f-notes').value.trim()
     };
 
     try {
-      // Send raw JSON as text/plain — no CORS preflight, no wrapping.
-      // Apps Script reads it directly from e.postData.contents and JSON.parse() works perfectly.
-      const jsonStr = JSON.stringify(payload);
-
+      // Send raw JSON as text/plain — no preflight CORS, body arrives intact
+      // in Apps Script as e.postData.contents which JSON.parse reads perfectly.
       await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: jsonStr
+        body:    JSON.stringify(payload)
       });
 
-      // Note: Apps Script Web Apps redirect, so we can't read the response body here.
-      // The request is always received if no network error is thrown above.
-
+      // Apps Script always redirects (opaque response) — if no network error
+      // was thrown above, the submission was received successfully.
       const box = document.getElementById('success-box');
-      box.innerHTML = '<p>&#10003;&nbsp;<strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a task has been created in Notion.</p>';
+      box.innerHTML = '<p>\u2713\u00a0<strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a task has been created in Notion.</p>';
       box.style.display = 'block';
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       submitBtn.textContent = '\u2713 Submitted';
 
     } catch (err) {
-      alert('Submission failed — please try again or contact the marketing team.\n\nError: ' + (err.message || err));
-      submitBtn.disabled = false;
+      alert('Submission failed \u2014 please try again.\n\nError: ' + (err.message || String(err)));
+      submitBtn.disabled    = false;
       submitBtn.textContent = 'Submit Brief \u2713';
-    } finally {
-      if (submitBtn.textContent !== '\u2713 Submitted') {
-        submitBtn.disabled = false;
-      }
     }
   }
 
+  // ── RESET ────────────────────────────────────────────────────
   function resetForm() {
     document.querySelectorAll('input[type="text"], input[type="email"], textarea').forEach(el => el.value = '');
     document.querySelectorAll('input[type="date"]').forEach(el => el.value = '');
@@ -481,63 +484,49 @@
       const el = document.getElementById(id);
       if (el) { el.textContent = '0 / 500'; el.style.color = '#bbb'; }
     });
+    const btn = document.querySelector('.btn-submit');
+    btn.disabled    = false;
+    btn.textContent = 'Submit Brief \u2713';
   }
 
+  // ── PDF DOWNLOAD ─────────────────────────────────────────────
   async function downloadPDF() {
     const { jsPDF } = window.jspdf;
     const btn = document.getElementById('pdfBtn');
-    btn.disabled = true;
-    btn.textContent = 'Generating…';
+    btn.disabled    = true;
+    btn.textContent = 'Generating\u2026';
 
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pageW = 210;
-    const pageH = 297;
-    const margin = 14;
-    const contentW = pageW - margin * 2;
-    let y = 0;
+    const doc      = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW    = 210, pageH = 297, margin = 14, contentW = pageW - margin * 2;
+    let   y        = 0;
 
-    // ── Header ──
     doc.setFillColor(35, 31, 32);
     doc.rect(0, 0, pageW, 22, 'F');
     doc.setFontSize(9);
     doc.setTextColor(180, 180, 180);
     doc.text('L3RN Institute  |  Marketing Brief', margin, 14);
     doc.setTextColor(120, 120, 120);
-    doc.text(new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'short',year:'numeric'}), pageW - margin, 14, {align:'right'});
+    doc.text(new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }), pageW - margin, 14, { align: 'right' });
     y = 32;
 
-    // ── Helper: add section ──
     function addSection(title, fields) {
-      // check space
-      if (y + 10 + fields.length * 14 > pageH - 20) {
-        doc.addPage();
-        y = 20;
-      }
-      // section label
+      if (y + 10 + fields.length * 14 > pageH - 20) { doc.addPage(); y = 20; }
       doc.setFontSize(7.5);
       doc.setTextColor(92, 107, 119);
       doc.setFont(undefined, 'bold');
       doc.text(title.toUpperCase(), margin, y);
-      // rule
       doc.setDrawColor(228, 226, 222);
       doc.setLineWidth(0.3);
       doc.line(margin + doc.getTextWidth(title.toUpperCase()) + 3, y - 0.5, pageW - margin, y - 0.5);
       y += 5;
-
       fields.forEach(([label, value]) => {
         if (!value) return;
         if (y + 14 > pageH - 20) { doc.addPage(); y = 20; }
-        // label
-        doc.setFontSize(8);
-        doc.setTextColor(35, 31, 32);
-        doc.setFont(undefined, 'bold');
+        doc.setFontSize(8); doc.setTextColor(35, 31, 32); doc.setFont(undefined, 'bold');
         doc.text(label, margin, y);
         y += 4.5;
-        // value (wrapped)
-        doc.setFont(undefined, 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(60, 60, 60);
-        const lines = doc.splitTextToSize(value || '—', contentW);
+        doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+        const lines = doc.splitTextToSize(value || '\u2014', contentW);
         lines.forEach(line => {
           if (y + 5 > pageH - 20) { doc.addPage(); y = 20; }
           doc.text(line, margin, y);
@@ -548,73 +537,61 @@
       y += 4;
     }
 
-    // ── Collect data ──
     const g = id => (document.getElementById(id)?.value || '').trim();
-    const selectedTags = [...document.querySelectorAll('#audience-tags .tag.selected')].map(t => t.textContent).join(', ');
-    const audienceCustom = g('f-audience-custom');
-    const fullAudience = [selectedTags, audienceCustom].filter(Boolean).join(' | ');
-    const priorityMap = { low: 'Standard — no immediate deadline', medium: 'Time-sensitive — deadline within weeks', high: 'Urgent — deadline within days' };
+    const selTags      = [...document.querySelectorAll('#audience-tags .tag.selected')].map(t => t.textContent).join(', ');
+    const custAudience = g('f-audience-custom');
+    const fullAudience = [selTags, custAudience].filter(Boolean).join(' | ');
+    const priorityMap  = { low: 'Standard \u2014 no immediate deadline', medium: 'Time-sensitive \u2014 deadline within weeks', high: 'Urgent \u2014 deadline within days' };
 
     addSection('Submitted by', [
-      ['Full name', g('f-name')],
-      ['Email', g('f-email')],
-      ['Sales region / team', g('f-region')],
-      ['Date submitted', g('f-date')],
+      ['Full name',          g('f-name')],
+      ['Email',              g('f-email')],
+      ['Sales region/team',  g('f-region')],
+      ['Date submitted',     g('f-date')]
     ]);
-
-    addSection('1 — What is the project about?', [
-      ['Project name', g('f-project')],
-      ['Project description', g('f-desc')],
+    addSection('1 \u2014 What is the project about?', [
+      ['Project name',        g('f-project')],
+      ['Project description', g('f-desc')]
     ]);
-
-    addSection('2 — Why do we need to communicate it?', [
-      ['Business reason', g('f-why')],
+    addSection('2 \u2014 Why do we need to communicate it?', [
+      ['Business reason', g('f-why')]
     ]);
-
-    addSection('3 — What problem is this solving?', [
+    addSection('3 \u2014 What problem is this solving?', [
       ['Problem statement', g('f-problem')],
-      ['Desired outcome', g('f-outcome')],
+      ['Desired outcome',   g('f-outcome')]
+    ]);
+    addSection('4 \u2014 Who are we talking to?', [
+      ['Target audience',       fullAudience],
+      ['Industry/sector focus', g('f-industry')]
+    ]);
+    addSection('5 \u2014 Duration & timeline', [
+      ['Project start date',            g('f-start')],
+      ['Project end date',              g('f-end')],
+      ['Key milestones or deadlines',   g('f-milestones')]
+    ]);
+    addSection('6 \u2014 Urgency input', [
+      ['Urgency level',     selectedPriority ? priorityMap[selectedPriority] : ''],
+      ['Reason for urgency', g('f-urgency-reason')]
+    ]);
+    addSection('7 \u2014 Anything else?', [
+      ['Additional notes', g('f-notes')]
     ]);
 
-    addSection('4 — Who are we talking to?', [
-      ['Target audience', fullAudience],
-      ['Industry / sector focus', g('f-industry')],
-    ]);
-
-    addSection('5 — Duration & timeline', [
-      ['Project start date', g('f-start')],
-      ['Project end date', g('f-end')],
-      ['Key milestones or deadlines', g('f-milestones')],
-    ]);
-
-    addSection('6 — Urgency input', [
-      ['Urgency level', selectedPriority ? priorityMap[selectedPriority] : ''],
-      ['Reason for urgency', g('f-urgency-reason')],
-    ]);
-
-    addSection('7 — Anything else?', [
-      ['Additional notes', g('f-notes')],
-    ]);
-
-    // ── Footer on every page ──
     const totalPages = doc.getNumberOfPages();
     for (let i = 1; i <= totalPages; i++) {
       doc.setPage(i);
       doc.setFillColor(35, 31, 32);
       doc.rect(0, pageH - 10, pageW, 10, 'F');
-      doc.setFontSize(7);
-      doc.setTextColor(120, 120, 120);
-      doc.text('Radiating Knowledge — leoron.com', margin, pageH - 4);
-      doc.text(`Page ${i} of ${totalPages}`, pageW - margin, pageH - 4, { align: 'right' });
+      doc.setFontSize(7); doc.setTextColor(120, 120, 120);
+      doc.text('Radiating Knowledge \u2014 leoron.com', margin, pageH - 4);
+      doc.text('Page ' + i + ' of ' + totalPages, pageW - margin, pageH - 4, { align: 'right' });
     }
 
     const projectName = g('f-project') || 'brief';
-    doc.save(`LEORON_Brief_${projectName.replace(/\s+/g,'_')}.pdf`);
-
-    btn.disabled = false;
-    btn.textContent = '↓ Save as PDF';
+    doc.save('LEORON_Brief_' + projectName.replace(/\s+/g, '_') + '.pdf');
+    btn.disabled    = false;
+    btn.textContent = '\u2193 Save as PDF';
   }
 </script>
-
 </body>
 </html>
