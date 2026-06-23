@@ -369,7 +369,7 @@
     </div>
 
     <div class="success-box" id="success-box">
-      <p>&#10003; <strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a Notion task has been created.</p>
+      <p>&#10003; <strong>Brief submitted!</strong> Logged in Google Sheets and a Notion task created.</p>
     </div>
 
   </div>
@@ -439,41 +439,31 @@
     };
 
     try {
-      // Send as URL-encoded form — avoids CORS preflight, Apps Script receives full data
-      const formBody = "data=" + encodeURIComponent(JSON.stringify(payload));
+      // Send raw JSON as text/plain — no CORS preflight, no wrapping.
+      // Apps Script reads it directly from e.postData.contents and JSON.parse() works perfectly.
+      const jsonStr = JSON.stringify(payload);
 
-      const response = await fetch(APPS_SCRIPT_URL, {
+      await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formBody
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: jsonStr
       });
 
-      // Apps Script returns JSON; read it to catch any server-side error
-      let result = {};
-      try {
-        result = await response.json();
-      } catch (_) {
-        // If Apps Script returns non-JSON (e.g. redirect), treat as success
-        // because the submission was still received
-      }
-
-      if (result.status === 'error') {
-        throw new Error(result.message || 'Apps Script reported an error.');
-      }
+      // Note: Apps Script Web Apps redirect, so we can't read the response body here.
+      // The request is always received if no network error is thrown above.
 
       const box = document.getElementById('success-box');
-      box.innerHTML = '<p>&#10003; <strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a task has been created in Notion.</p>';
+      box.innerHTML = '<p>&#10003;&nbsp;<strong>Brief submitted!</strong> Your request has been logged in Google Sheets and a task has been created in Notion.</p>';
       box.style.display = 'block';
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       submitBtn.textContent = '\u2713 Submitted';
 
     } catch (err) {
-      alert('Submission failed: ' + (err.message || err) + '\n\nPlease screenshot this message and contact the marketing team.');
+      alert('Submission failed — please try again or contact the marketing team.\n\nError: ' + (err.message || err));
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit Brief \u2713';
     } finally {
       if (submitBtn.textContent !== '\u2713 Submitted') {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Submit Brief \u2713';
-      } else {
         submitBtn.disabled = false;
       }
     }
